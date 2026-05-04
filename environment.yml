@@ -1,0 +1,12 @@
+name: reactify
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - opencv
+  - pygame
+  - numpy
+  - pip:
+      # future packages go here
+      # - mediapipe
