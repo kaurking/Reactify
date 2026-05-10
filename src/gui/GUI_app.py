@@ -3,6 +3,8 @@ import time
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
+from core.obs_bridge import OBSBridge, ObsEffect
+
 from gesture_detector import GestureDetector
 from core import MemeLibrary, TriggerEngine, AudioPlayer, VisualRenderer
 from core.profile_store import (
@@ -35,6 +37,8 @@ class ReactifyGUI:
 
         self.audio_player = AudioPlayer()
         self.visual_renderer = VisualRenderer()
+        self.obs_bridge = OBSBridge(password="")
+        self.obs_bridge.connect()
 
         self.current_photo = None
 
@@ -452,11 +456,28 @@ class ReactifyGUI:
                 f"effect={effect.name if effect else None}"
             )
             self.last_log_time = now
-
+        '''
         if effect:
             self._log(f"Triggered: {effect.name}")
             self.audio_player.play(effect)
             self.visual_renderer.trigger_overlay(effect)
+        '''
+        if effect:
+            self._log(f"Triggered: {effect.name}")
+
+            # Local preview/debug behavior
+            self.audio_player.play(effect)
+            self.visual_renderer.trigger_overlay(effect)
+
+            # OBS output behavior
+            self.obs_bridge.trigger_effect(
+                ObsEffect(
+                    scene_name="Reactify",
+                    image_source_name="AbsoluteCinemaOverlay",
+                    sound_source_name="VineBoomSound",
+                    duration=effect.overlay_duration,
+                )
+            )
 
         frame = self.visual_renderer.render(frame)
 
@@ -851,6 +872,7 @@ class ReactifyGUI:
         self.sampling_active = False
         self.cleanup_camera()
         self.audio_player.close()
+        self.obs_bridge.disconnect()
         self.root.destroy()
 
 
