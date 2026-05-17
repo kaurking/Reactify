@@ -465,7 +465,7 @@ class ReactifyGUI:
         if effect:
             self._log(f"Triggered: {effect.name}")
 
-            # Local preview/debug behavior
+            # Local
             self.audio_player.play(effect)
             self.visual_renderer.trigger_overlay(effect)
 
