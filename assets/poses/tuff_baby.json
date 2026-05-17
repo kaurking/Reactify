@@ -13,7 +13,7 @@
   },
   "image": "assets/images/tuff-tuff-baby.gif",
   "sound": "assets/sounds/vine-boom.mp3",
-  "threshold": 0.25,
+  "threshold": 0.1,
   "cooldown": 3.0,
   "overlay_duration": 2.0,
   "samples": [

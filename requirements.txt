@@ -4,3 +4,4 @@ pygame-ce
 mediapipe==0.10.35
 pillow
 obsws-python
+spoutGL

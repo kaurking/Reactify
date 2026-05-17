@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
 from core.obs_bridge import OBSBridge, ObsEffect
+from core.video_output import SpoutVideoOutput, NullVideoOutput
 
 from gesture_detector import GestureDetector
 from core import MemeLibrary, TriggerEngine, AudioPlayer, VisualRenderer
@@ -39,6 +40,9 @@ class ReactifyGUI:
         self.visual_renderer = VisualRenderer()
         self.obs_bridge = OBSBridge(password="")
         self.obs_bridge.connect()
+
+        self.video_output = SpoutVideoOutput(sender_name="Reactify")
+        self.video_output_started = False
 
         self.current_photo = None
 
@@ -380,6 +384,8 @@ class ReactifyGUI:
 
         self._log("Stopping camera...")
 
+        self.video_output.close()
+        self.video_output_started = False
         self.running = False
         self.sampling_active = False
         self.sampling_started_from_profiles = False
@@ -465,8 +471,8 @@ class ReactifyGUI:
         if effect:
             self._log(f"Triggered: {effect.name}")
 
-            # Local
-            self.audio_player.play(effect)
+            # Local preview/debug behavior
+            #self.audio_player.play(effect)
             self.visual_renderer.trigger_overlay(effect)
 
             # OBS output behavior
@@ -480,6 +486,14 @@ class ReactifyGUI:
             )
 
         frame = self.visual_renderer.render(frame)
+
+
+        if not self.video_output_started:
+            height, width = frame.shape[:2]
+            self.video_output.start(width, height)
+            self.video_output_started = True
+
+        self.video_output.send_frame(frame)
 
         if self.sampling_active:
             frame = self._draw_sampling_countdown(frame, now)
@@ -549,9 +563,7 @@ class ReactifyGUI:
         return cv2.resize(frame, (new_width, new_height))
 
     def _show_frame(self, frame):
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-        success, encoded_image = cv2.imencode(".ppm", rgb_frame)
+        success, encoded_image = cv2.imencode(".ppm", frame)
 
         if not success:
             self._log("Could not encode frame for GUI.")
@@ -872,6 +884,7 @@ class ReactifyGUI:
         self.sampling_active = False
         self.cleanup_camera()
         self.audio_player.close()
+        self.video_output.close()
         self.obs_bridge.disconnect()
         self.root.destroy()
 
