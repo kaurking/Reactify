@@ -21,6 +21,7 @@ class MemeEffect:
     name: str
     image_path: Optional[Path] = None
     sound_path: Optional[Path] = None
+    sound_volume: float = 1.0
     cooldown: float = 3.0
     overlay_duration: float = 1.5
 
@@ -68,6 +69,7 @@ class MemeLibrary:
                 profile.get("sound"),
                 self._default_sound_path(gesture),
             ),
+            sound_volume=self._profile_float(profile, "sound_volume", 1.0),
             cooldown=self._profile_float(profile, "cooldown", 3.0),
             overlay_duration=self._profile_float(profile, "overlay_duration", 1.5),
         )

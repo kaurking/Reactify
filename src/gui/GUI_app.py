@@ -2,9 +2,10 @@ import cv2
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+import platform
 
 from core.obs_bridge import OBSBridge, ObsEffect
-from core.video_output import SpoutVideoOutput, NullVideoOutput
+from core.spout_video_output import SpoutVideoOutput, NullVideoOutput
 
 from gesture_detector import GestureDetector
 from core import MemeLibrary, TriggerEngine, AudioPlayer, VisualRenderer
@@ -41,7 +42,13 @@ class ReactifyGUI:
         self.obs_bridge = OBSBridge(password="")
         self.obs_bridge.connect()
 
-        self.video_output = SpoutVideoOutput(sender_name="Reactify")
+        if platform.system() == "Windows":
+            print("running on windows")
+            self.video_output = SpoutVideoOutput("Reactify")
+        else:
+            self.video_output = NullVideoOutput()
+            print("running on mac")
+
         self.video_output_started = False
 
         self.current_photo = None
@@ -218,6 +225,7 @@ class ReactifyGUI:
         self.profile_gesture_var = tk.StringVar(value="absolute_cinema")
         self.profile_threshold_var = tk.StringVar(value="0.55")
         self.profile_cooldown_var = tk.StringVar(value="3.0")
+        self.profile_sound_volume_var = tk.StringVar(value="1.0")
         self.profile_overlay_duration_var = tk.StringVar(value="1.8")
         self.profile_image_var = tk.StringVar(value="assets/images/Absolute_Cinema.png")
         self.profile_sound_var = tk.StringVar(value="assets/sounds/vine-boom.mp3")
@@ -227,6 +235,7 @@ class ReactifyGUI:
         self._form_row(form, "Gesture ID:", self.profile_gesture_var)
         self._form_row(form, "Threshold:", self.profile_threshold_var)
         self._form_row(form, "Cooldown:", self.profile_cooldown_var)
+        self._form_row(form, "Sound volume:", self.profile_sound_volume_var)
         self._form_row(form, "Overlay duration:", self.profile_overlay_duration_var)
 
         image_row = ttk.Frame(form)
@@ -293,17 +302,26 @@ class ReactifyGUI:
         )
         self.cancel_sampling_button.pack(anchor=tk.W, pady=3)
 
-        ttk.Button(
-            right,
-            text="Save Profile",
-            command=self.save_current_profile,
-        ).pack(anchor=tk.W, pady=5)
+        button_row = ttk.Frame(right)
+        button_row.pack(anchor=tk.W, pady=5)
 
         ttk.Button(
-            right,
+            button_row,
+            text="New Emote",
+            command=self.new_profile,
+        ).pack(side=tk.LEFT, padx=4)
+
+        ttk.Button(
+            button_row,
+            text="Save Profile",
+            command=self.save_current_profile,
+        ).pack(side=tk.LEFT, padx=4)
+
+        ttk.Button(
+            button_row,
             text="Reload Profiles",
             command=self.reload_profiles_runtime,
-        ).pack(anchor=tk.W, pady=5)
+        ).pack(side=tk.LEFT, padx=4)
 
         help_text = (
             "Start the camera first, then click the sample button and hold the pose. "
@@ -462,25 +480,22 @@ class ReactifyGUI:
                 f"effect={effect.name if effect else None}"
             )
             self.last_log_time = now
-        '''
-        if effect:
-            self._log(f"Triggered: {effect.name}")
-            self.audio_player.play(effect)
-            self.visual_renderer.trigger_overlay(effect)
-        '''
+        
+
         if effect:
             self._log(f"Triggered: {effect.name}")
 
-            # Local preview/debug behavior
-            #self.audio_player.play(effect)
             self.visual_renderer.trigger_overlay(effect)
+            obs_image_source = None if platform.system() == "Windows" else "ReactifyOverlay"
 
-            # OBS output behavior
             self.obs_bridge.trigger_effect(
                 ObsEffect(
                     scene_name="Reactify",
-                    image_source_name="AbsoluteCinemaOverlay",
-                    sound_source_name="VineBoomSound",
+                    image_source_name=obs_image_source,
+                    image_path=str(effect.image_path) if effect.image_path else None,
+                    sound_source_name="ReactifySound",
+                    sound_path=str(effect.sound_path) if effect.sound_path else None,
+                    sound_volume=effect.sound_volume,
                     duration=effect.overlay_duration,
                 )
             )
@@ -598,6 +613,7 @@ class ReactifyGUI:
 
         self.profile_display_name_var.set(profile.get("display_name", ""))
         self.profile_gesture_var.set(profile.get("gesture", ""))
+        self.profile_sound_volume_var.set(str(profile.get("sound_volume", 1.0)))
         self.profile_threshold_var.set(str(profile.get("threshold", 0.55)))
         self.profile_cooldown_var.set(str(profile.get("cooldown", 3.0)))
         self.profile_overlay_duration_var.set(str(profile.get("overlay_duration", 1.8)))
@@ -606,6 +622,28 @@ class ReactifyGUI:
 
         self.pending_samples = profile.get("samples", [])
         self.profile_samples_var.set(f"Samples recorded: {len(self.pending_samples)}")
+
+    def new_profile(self):
+        self.profile_display_name_var.set("")
+        self.profile_gesture_var.set("")
+        self.profile_threshold_var.set("0.25")
+        self.profile_cooldown_var.set("2.0")
+        self.profile_sound_volume_var.set("1.0")
+        self.profile_overlay_duration_var.set("1.8")
+        self.profile_image_var.set("")
+        self.profile_sound_var.set("")
+
+        self.pending_samples = []
+        self.profile_samples_var.set("Samples recorded: 0")
+
+        self.profile_listbox.selection_clear(0, tk.END)
+
+        if self.profile_sampling_status_var is not None:
+            self.profile_sampling_status_var.set(
+                "New emote profile. Fill fields, choose image/sound, then record samples."
+            )
+
+        self._log("Started new emote profile.")
 
     def delete_selected_profile(self):
         selection = self.profile_listbox.curselection()
@@ -811,6 +849,7 @@ class ReactifyGUI:
             threshold = float(self.profile_threshold_var.get())
             cooldown = float(self.profile_cooldown_var.get())
             overlay_duration = float(self.profile_overlay_duration_var.get())
+            sound_volume = float(self.profile_sound_volume_var.get())
         except ValueError:
             messagebox.showerror(
                 "Invalid number",
@@ -829,6 +868,7 @@ class ReactifyGUI:
             },
             "image": self.profile_image_var.get().strip(),
             "sound": self.profile_sound_var.get().strip(),
+            "sound_volume": sound_volume,
             "threshold": threshold,
             "cooldown": cooldown,
             "overlay_duration": overlay_duration,

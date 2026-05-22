@@ -15,6 +15,9 @@ class ObsEffect:
     image_source_name: Optional[str] = None
     sound_source_name: Optional[str] = None
     duration: float = 1.5
+    image_path: str | None = None
+    sound_path: str | None = None
+    sound_volume: float = 1.0
 
 
 class OBSBridge:
@@ -58,6 +61,13 @@ class OBSBridge:
         if not self.connected or self.client is None:
             return
 
+        if effect.image_source_name and effect.image_path:
+            self.set_image_source_file(effect.image_source_name, effect.image_path)
+
+        if effect.sound_source_name and effect.sound_path:
+            self.set_media_source_file(effect.sound_source_name, effect.sound_path)
+            self.set_source_volume(effect.sound_source_name, effect.sound_volume)
+
         if effect.image_source_name:
             self.show_source(
                 effect.scene_name,
@@ -67,6 +77,42 @@ class OBSBridge:
 
         if effect.sound_source_name:
             self.restart_media_source(effect.sound_source_name)
+
+    def set_image_source_file(self, source_name: str, image_path: str):
+        try:
+            self.client.set_input_settings(
+                source_name,
+                {"file": image_path},
+                True,
+            )
+        except Exception as error:
+            print(f"Could not set OBS image source file: {error}")
+
+
+    def set_media_source_file(self, source_name: str, media_path: str):
+        try:
+            self.client.set_input_settings(
+                source_name,
+                {
+                    "local_file": media_path,
+                    "is_local_file": True,
+                },
+                True,
+            )
+        except Exception as error:
+            print(f"Could not set OBS media source file: {error}")
+
+
+    def set_source_volume(self, source_name: str, volume: float):
+        try:
+            volume = max(0.0, min(float(volume), 2.0))
+
+            self.client.set_input_volume(
+                source_name,
+                volume,
+            )
+        except Exception as error:
+            print(f"Could not set OBS source volume: {error}")
 
     def show_source(self, scene_name: str, source_name: str, duration: float = 1.5):
         try:
