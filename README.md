@@ -12,11 +12,11 @@ Nessecary applications and plugins (MAC silicon and intel):
 3. Install blackhole
 
 #### Discord settings:
-Input Device: VB CABLE Output / blackhole Output
-Camera: OBS Virtual Camera
-Noise suppression: Off
-Echo cancellation: Off
-Automatic input sensitivity: Off
+Input Device: VB CABLE Output / blackhole Output <br>
+Camera: OBS Virtual Camera <br>
+Noise suppression: Off <br>
+Echo cancellation: Off <br>
+Automatic input sensitivity: Off 
 
 ### Setup guide (Windows) NB For first version, will be updated
 1. Install OBS studio. Install Spout plugin and Audio monitor plugin. Install VB virtual cable and restart your PC.
@@ -42,39 +42,19 @@ your headphones.
 8. In discord when inside a call apply the discord settings and set audio input as blackhole and camera to OBS virtual camera.
 9. Run the app with running main.py and Start your camera. This was the final step for now.
 
-### App use guide:
-To run the app OBS must be running and set up before according to the previous guide. To run the app, run main.py. 
+## App use guide:
+To run the app OBS must be running and set up before according to the previous guide. To run the app, run main.py. <br>
 There are 2 tabs. Camera tab and emote profiles tab. To addd an emote, klick New Emote and start filling in the nessecary parameters at the
-top. choose parameters and add a picture as png or a gif and add an mp3 sound. Once all is filled, klick Start Guided Sampling and take the 
-pose you want the uploded image and sound to react to. Once that is done, klick Save profiles. Klick Reload Profiles and a new emote has
-been added. It is not reccomennded to add emotes with similar body positions as it will detect them both at the same time. It is also not
+top. choose parameters and add a picture as png or a gif and add an mp3 sound. <br> Once all is filled, klick Start Guided Sampling and take the 
+pose you want the uploded image and sound to react to. <br> Once that is done, klick Save profiles. Klick Reload Profiles and a new emote has
+been added. <br> It is not reccomennded to add emotes with similar body positions as it will detect them both at the same time. It is also not
 reccommended to add more than 5 - 10 emotes at the same itme. This figure is based on the body positions though. 
 
 
-For .md source viewing only:
+#### Pipeline (Windows): 
+Webcam -> Reacify (MediaPipe detecor, Gesture matcher, Overlay renderer) -> via Spout to -> OBS (Spout source, Audio source) -> virtual camera to discord / audio via VB cable and OBS Audio monitor plugin to discord. 
 
-Pipeline
-                ┌-────────────────────┐
-                │     Reactify        │
-                │                     │
-Webcam ───────► │ MediaPipe detector  │
-                │ Gesture matcher     │
-                │ Overlay renderer    │
-                └───────┬────────────-┘
-                        │
-             video frame via Spout
-                        │
-                        ▼
-                ┌────────────────────┐
-                │        OBS         │
-                │ Spout/Syphon source│
-                │ Audio media source │
-                │ Mic source         │
-                └───────┬──────┬─────┘
-                        │      │
-             virtual cam│      │audio mix
-                        ▼      ▼
-                 Discord Cam  Mac -> Blackhole, MIDI | Windows -> VB cable, Audio monitor plugin
-                               │
-                               ▼
-                         Discord Mic
+#### Pipeline (MacOS):
+Webcam -> Reacify (MediaPipe detecor, Gesture matcher, Overlay renderer) and OBS (Audio source) -> virtual camera to discord / audio via blackhole to discord. 
+
+The difference in MacOS is that the drivers of mac cameras allow multiple sources to own the camera at the same time (Reactify and OBS). In Windows camera feed is sent via Spout to OBS.
