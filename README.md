@@ -22,25 +22,27 @@ Automatic input sensitivity: Off
 1. Install OBS studio. Install Spout plugin and Audio monitor plugin. Install VB virtual cable and restart your PC.
 2. in OBS settings set Audio monitoring device to VB cable Input.
 3. Enable OBS WebSocket server. Go Tools -> WebSocket Server setting -> enable. keep port default. TODO: auth should be enabled but works well without
-4. open OBS. Create a new scene called "Reactify".
-5. Add a media Source to Reactify scene and call it exactly "ReactifySound". Add a Spout source. Keep settings default.
-6. Under audio mixer set "Mic/Aux" and "ReactifySound" to monitor and output (under gear icon).
-7. (not mandatory) If you want to hear the soundeffects youself you have to add a Audio monitor filter to the added effects. Add device as 
+4. Copy `.env.example` to `.env` and set `OBS_PASSWORD` to the OBS WebSocket server password from Tools -> WebSocket Server Settings.
+5. open OBS. Create a new scene called "Reactify".
+6. Add a media Source to Reactify scene and call it exactly "ReactifySound". Add a Spout source. Keep settings default.
+7. Under audio mixer set "Mic/Aux" and "ReactifySound" to monitor and output (under gear icon).
+8. (not mandatory) If you want to hear the soundeffects youself you have to add a Audio monitor filter to the added effects. Add device as
 your headphones. 
-8. Start virtual camera in OBS.
-9. In discord when inside a call apply the discord settings and set audio input as VB Output and camera to OBS virtual camera.
-10. Run the app with running main.py and Start your camera. This was the final step for now.
+9. Start virtual camera in OBS.
+10. In discord when inside a call apply the discord settings and set audio input as VB Output and camera to OBS virtual camera.
+11. Run the app with running main.py and Start your camera. This was the final step for now.
 
 ### Setup guide (MAC silicon and intel)
 1. Install OBS studio. Install blackhole and restart your PC.
 2. In Audio MIDI setup app create a new multi-output device, call it "Reactify output". Enable blackhole and your headphone/speaker. Set the latter as primary.
 3. in OBS settings set Audio monitoring device to "Reactify output".
 4. Enable OBS WebSocket server. Go Tools -> WebSocket Server setting -> enable. keep port default. TODO: auth should be enabled but works well without
-5. Open OBS. On the left create a scene called "Reactify". 
-6. To the Reactify scene add a image source called exactly "ReactifyOverlay" and Media source called exactly "ReactifySound". Leave both with default settings.
-7. Under audio mixer set "Mic/Aux" and "ReactifySound" to monitor and output (under gear icon). TODO: you will hear yourself (will be fixed)
-8. In discord when inside a call apply the discord settings and set audio input as blackhole and camera to OBS virtual camera.
-9. Run the app with running main.py and Start your camera. This was the final step for now.
+5. Copy `.env.example` to `.env` and set `OBS_PASSWORD` to the OBS WebSocket server password from Tools -> WebSocket Server Settings.
+6. Open OBS. On the left create a scene called "Reactify".
+7. To the Reactify scene add a image source called exactly "ReactifyOverlay" and Media source called exactly "ReactifySound". Leave both with default settings.
+8. Under audio mixer set "Mic/Aux" and "ReactifySound" to monitor and output (under gear icon). TODO: you will hear yourself (will be fixed)
+9. In discord when inside a call apply the discord settings and set audio input as blackhole and camera to OBS virtual camera.
+10. Run the app with running main.py and Start your camera. This was the final step for now.
 
 ## App use guide:
 To run the app OBS must be running and set up before according to the previous guide. To run the app, run main.py. <br>

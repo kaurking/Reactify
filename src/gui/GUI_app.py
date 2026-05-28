@@ -19,6 +19,8 @@ from core.profile_store import (
 
 
 class ReactifyGUI:
+    DEFAULT_REQUIRED_HOLD_SECONDS = 0.05
+
     def __init__(self, root):
         self.root = root
         self.root.title("Reactify")
@@ -32,14 +34,14 @@ class ReactifyGUI:
         self.library = MemeLibrary()
         self.library.load_defaults()
 
-        self.trigger_engine = TriggerEngine(
-            effects=self.library.effects,
-            min_confidence=0.15,
+        self.required_hold_seconds_var = tk.StringVar(
+            value=str(self.DEFAULT_REQUIRED_HOLD_SECONDS)
         )
+        self.trigger_engine = self._create_trigger_engine()
 
         self.audio_player = AudioPlayer()
         self.visual_renderer = VisualRenderer()
-        self.obs_bridge = OBSBridge(password="")
+        self.obs_bridge = OBSBridge()
         self.obs_bridge.connect()
 
         if platform.system() == "Windows":
@@ -144,6 +146,24 @@ class ReactifyGUI:
         )
         self.stop_button.pack(fill=tk.X, pady=3)
 
+        ttk.Label(box, text="Hold time before trigger (seconds):").pack(
+            anchor=tk.W,
+            pady=(10, 0),
+        )
+
+        self.required_hold_entry = ttk.Entry(
+            box,
+            textvariable=self.required_hold_seconds_var,
+            width=10,
+        )
+        self.required_hold_entry.pack(anchor=tk.W, pady=(0, 6))
+
+        ttk.Button(
+            box,
+            text="Apply Trigger Settings",
+            command=self.apply_trigger_settings,
+        ).pack(fill=tk.X, pady=3)
+
     def _build_status(self, parent):
         box = ttk.LabelFrame(parent, text="Detection Status", padding=10)
         box.pack(fill=tk.X, pady=(0, 10))
@@ -160,7 +180,7 @@ class ReactifyGUI:
         self._status_row(box, "Confidence:", self.confidence_var)
         self._status_row(box, "Landmarks:", self.landmarks_var)
         self._status_row(box, "Effect:", self.effect_var)
-        self._status_row(box, "Hold:", self.hold_progress_var)
+        self._status_row(box, "Hold progress:", self.hold_progress_var)
 
     def _build_effects(self, parent):
         box = ttk.LabelFrame(parent, text="Loaded Effects", padding=10)
@@ -233,10 +253,10 @@ class ReactifyGUI:
 
         self._form_row(form, "Display name:", self.profile_display_name_var)
         self._form_row(form, "Gesture ID:", self.profile_gesture_var)
-        self._form_row(form, "Threshold:", self.profile_threshold_var)
-        self._form_row(form, "Cooldown:", self.profile_cooldown_var)
+        self._form_row(form, "Pose match threshold:", self.profile_threshold_var)
+        self._form_row(form, "Cooldown after trigger (seconds):", self.profile_cooldown_var)
         self._form_row(form, "Sound volume:", self.profile_sound_volume_var)
-        self._form_row(form, "Overlay duration:", self.profile_overlay_duration_var)
+        self._form_row(form, "Overlay duration (seconds):", self.profile_overlay_duration_var)
 
         image_row = ttk.Frame(form)
         image_row.pack(fill=tk.X, pady=3)
@@ -341,19 +361,51 @@ class ReactifyGUI:
         row = ttk.Frame(parent)
         row.pack(fill=tk.X, pady=2)
 
-        ttk.Label(row, text=label_text, width=12).pack(side=tk.LEFT)
+        ttk.Label(row, text=label_text, width=14).pack(side=tk.LEFT)
         ttk.Label(row, textvariable=variable).pack(side=tk.LEFT)
 
     def _form_row(self, parent, label, variable):
         row = ttk.Frame(parent)
         row.pack(fill=tk.X, pady=3)
 
-        ttk.Label(row, text=label, width=18).pack(side=tk.LEFT)
+        ttk.Label(row, text=label, width=32).pack(side=tk.LEFT)
 
         entry = ttk.Entry(row, textvariable=variable)
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         return entry
+
+    def _get_required_hold_seconds(self):
+        try:
+            hold_seconds = float(self.required_hold_seconds_var.get())
+        except ValueError as error:
+            raise ValueError("Hold time before trigger must be a number.") from error
+
+        if hold_seconds < 0:
+            raise ValueError("Hold time before trigger cannot be negative.")
+
+        return hold_seconds
+
+    def _create_trigger_engine(self):
+        return TriggerEngine(
+            effects=self.library.effects,
+            min_confidence=0.15,
+            required_hold_seconds=self._get_required_hold_seconds(),
+        )
+
+    def apply_trigger_settings(self):
+        try:
+            self.trigger_engine = self._create_trigger_engine()
+        except ValueError as error:
+            messagebox.showerror("Invalid trigger setting", str(error))
+            return
+
+        self.hold_progress_var.set("0%")
+        self.effect_var.set("None")
+        self._log(
+            "Applied trigger settings: "
+            f"hold time before trigger = {self.trigger_engine.required_hold_seconds}s"
+        )
 
     def start_camera(self):
         if self.running:
@@ -369,6 +421,8 @@ class ReactifyGUI:
             return False
 
         try:
+            self.trigger_engine = self._create_trigger_engine()
+
             self._log("Starting detector...")
             self.detector = GestureDetector(debug=True)
 
@@ -885,10 +939,11 @@ class ReactifyGUI:
     def reload_profiles_runtime(self):
         self.library.reload()
 
-        self.trigger_engine = TriggerEngine(
-            effects=self.library.effects,
-            min_confidence=0.15,
-        )
+        try:
+            self.trigger_engine = self._create_trigger_engine()
+        except ValueError as error:
+            messagebox.showerror("Invalid trigger setting", str(error))
+            return
 
         if self.detector is not None:
             self.detector.reload_templates()
