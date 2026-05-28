@@ -14,6 +14,7 @@ from mediapipe.tasks.python import vision
 BASE_DIR = Path(__file__).resolve().parent.parent
 POSE_MODEL_PATH = BASE_DIR / "models" / "pose_landmarker_lite.task"
 FACE_MODEL_PATH = BASE_DIR / "models" / "face_landmarker.task"
+HAND_MODEL_PATH = BASE_DIR / "models" / "hand_landmarker.task"
 POSE_DIR = BASE_DIR / "assets" / "poses"
 
 
@@ -24,6 +25,7 @@ class DetectionResult:
     landmarks: Optional[Dict[str, Any]] = None
     normalized_pose: Optional[Dict[str, Any]] = None
     normalized_face: Optional[Dict[str, Any]] = None
+    normalized_hands: Optional[Dict[str, Any]] = None
     derived_features: Optional[Dict[str, float]] = None
     sample_data: Optional[Dict[str, Any]] = None
 
@@ -32,9 +34,10 @@ class GestureDetector:
     """
     MediaPipe Tasks-based detector using layered profile samples.
 
-    Samples can include pose, face, and derived feature layers. All point
-    coordinates are normalized around the shoulder midpoint and shoulder width
-    so body, face, and hand-to-mouth distances share one coordinate space.
+    Samples can include pose, face, hands, and derived feature layers. All point
+    coordinates are normalized around the face so facecam-centered gestures can
+    compare face expressions, arms, shoulders, wrists, hands, and fingers in one
+    coordinate space.
     """
 
     POSE_LANDMARKS = {
@@ -53,12 +56,42 @@ class GestureDetector:
         "lower_lip": 14,
         "left_mouth_corner": 61,
         "right_mouth_corner": 291,
+        "left_eye_outer": 33,
+        "right_eye_outer": 263,
+        "left_eyebrow": 105,
+        "right_eyebrow": 334,
+        "chin": 152,
+    }
+
+    HAND_LANDMARKS = {
+        "wrist": 0,
+        "thumb_cmc": 1,
+        "thumb_mcp": 2,
+        "thumb_ip": 3,
+        "thumb_tip": 4,
+        "index_mcp": 5,
+        "index_pip": 6,
+        "index_dip": 7,
+        "index_tip": 8,
+        "middle_mcp": 9,
+        "middle_pip": 10,
+        "middle_dip": 11,
+        "middle_tip": 12,
+        "ring_mcp": 13,
+        "ring_pip": 14,
+        "ring_dip": 15,
+        "ring_tip": 16,
+        "pinky_mcp": 17,
+        "pinky_pip": 18,
+        "pinky_dip": 19,
+        "pinky_tip": 20,
     }
 
     DEFAULT_LAYER_WEIGHTS = {
-        "pose": 0.35,
+        "pose": 0.20,
         "face": 0.25,
-        "derived": 0.40,
+        "hands": 0.25,
+        "derived": 0.30,
     }
 
     def __init__(
@@ -80,6 +113,7 @@ class GestureDetector:
         self.debug = debug
         self.debug_interval = debug_interval
         self.last_debug_time = 0.0
+        self.master_strictness = 50.0
 
         self.pose_templates = self._load_pose_templates()
 
@@ -96,6 +130,7 @@ class GestureDetector:
 
         self.detector = vision.PoseLandmarker.create_from_options(pose_options)
         self.face_detector = None
+        self.hand_detector = None
 
         if FACE_MODEL_PATH.exists():
             face_base_options = python.BaseOptions(model_asset_path=str(FACE_MODEL_PATH))
@@ -112,6 +147,21 @@ class GestureDetector:
         else:
             print(f"[WARN] Face model missing: {FACE_MODEL_PATH}")
 
+        if HAND_MODEL_PATH.exists():
+            hand_base_options = python.BaseOptions(model_asset_path=str(HAND_MODEL_PATH))
+            hand_options = vision.HandLandmarkerOptions(
+                base_options=hand_base_options,
+                running_mode=vision.RunningMode.VIDEO,
+                num_hands=2,
+                min_hand_detection_confidence=0.5,
+                min_hand_presence_confidence=0.5,
+                min_tracking_confidence=0.5,
+            )
+
+            self.hand_detector = vision.HandLandmarker.create_from_options(hand_options)
+        else:
+            print(f"[WARN] Hand model missing: {HAND_MODEL_PATH}")
+
     def detect(self, frame) -> DetectionResult:
         if frame is None:
             return DetectionResult(
@@ -120,6 +170,7 @@ class GestureDetector:
                 landmarks=None,
                 normalized_pose=None,
                 normalized_face=None,
+                normalized_hands=None,
                 derived_features=None,
                 sample_data=None,
             )
@@ -137,78 +188,91 @@ class GestureDetector:
         if self.face_detector is not None:
             face_result = self.face_detector.detect_for_video(mp_image, timestamp_ms)
 
-        if not pose_result.pose_landmarks:
-            self._debug_print("[POSE DEBUG] no pose landmarks")
+        hand_result = None
+        if self.hand_detector is not None:
+            hand_result = self.hand_detector.detect_for_video(mp_image, timestamp_ms)
+
+        face_landmarks = None
+        if face_result is not None and face_result.face_landmarks:
+            face_landmarks = face_result.face_landmarks[0]
+
+        if face_landmarks is None:
+            self._debug_print("[FACE DEBUG] no face landmarks")
             return DetectionResult(
                 gesture=None,
                 confidence=0.0,
                 landmarks=None,
                 normalized_pose=None,
                 normalized_face=None,
+                normalized_hands=None,
                 derived_features=None,
                 sample_data=None,
             )
 
-        pose_landmarks = pose_result.pose_landmarks[0]
         landmark_dict = {
-            "pose": self._landmarks_to_dict(pose_landmarks, self._pose_landmark_names())
-        }
-
-        face_landmarks = None
-        if face_result is not None and face_result.face_landmarks:
-            face_landmarks = face_result.face_landmarks[0]
-            landmark_dict["face"] = self._landmarks_to_dict(
+            "face": self._landmarks_to_dict(
                 face_landmarks,
                 self._face_landmark_names(),
             )
+        }
 
-        reference = self._get_pose_normalization_reference(
-            pose_landmarks,
-            require_visibility=True,
-        )
-
-        relaxed_reference = reference
-        if relaxed_reference is None:
-            relaxed_reference = self._get_pose_normalization_reference(
+        pose_landmarks = None
+        if pose_result.pose_landmarks:
+            pose_landmarks = pose_result.pose_landmarks[0]
+            landmark_dict["pose"] = self._landmarks_to_dict(
                 pose_landmarks,
-                require_visibility=False,
+                self._pose_landmark_names(),
             )
 
-        if relaxed_reference is None:
-            self._debug_print("[POSE DEBUG] pose found, but shoulders could not normalize")
+        hand_landmarks = []
+        handedness = []
+        if hand_result is not None and hand_result.hand_landmarks:
+            hand_landmarks = hand_result.hand_landmarks
+            handedness = getattr(hand_result, "handedness", []) or []
+            landmark_dict["hands"] = self._hands_to_dict(hand_landmarks, handedness)
+
+        reference = self._get_face_normalization_reference(face_landmarks)
+        if reference is None:
+            self._debug_print("[FACE DEBUG] face found, but could not normalize")
             return DetectionResult(
                 gesture=None,
                 confidence=0.0,
                 landmarks=landmark_dict,
                 normalized_pose=None,
                 normalized_face=None,
+                normalized_hands=None,
                 derived_features=None,
                 sample_data=None,
             )
 
-        shoulder_center, shoulder_width = relaxed_reference
+        face_center, face_scale = reference
         normalized_pose = self._normalize_pose_with_reference(
             pose_landmarks,
-            shoulder_center,
-            shoulder_width,
+            face_center,
+            face_scale,
         )
         normalized_face = self._normalize_face(
             face_landmarks,
-            shoulder_center,
-            shoulder_width,
+            face_center,
+            face_scale,
+        )
+        normalized_hands = self._normalize_hands(
+            hand_landmarks,
+            handedness,
+            face_center,
+            face_scale,
         )
         derived_features = self._build_derived_features(
             normalized_pose,
             normalized_face,
+            normalized_hands,
         )
         sample_data = self._build_sample_data(
             normalized_pose,
             normalized_face,
+            normalized_hands,
             derived_features,
         )
-
-        if reference is None:
-            self._debug_print("[POSE DEBUG] matching with relaxed landmark visibility")
 
         match = self._match_sample(sample_data)
 
@@ -222,6 +286,7 @@ class GestureDetector:
                 landmarks=landmark_dict,
                 normalized_pose=normalized_pose,
                 normalized_face=normalized_face,
+                normalized_hands=normalized_hands,
                 derived_features=derived_features,
                 sample_data=sample_data,
             )
@@ -232,12 +297,16 @@ class GestureDetector:
             landmarks=landmark_dict,
             normalized_pose=normalized_pose,
             normalized_face=normalized_face,
+            normalized_hands=normalized_hands,
             derived_features=derived_features,
             sample_data=sample_data,
         )
 
     def reload_templates(self):
         self.pose_templates = self._load_pose_templates()
+
+    def set_master_strictness(self, strictness: float):
+        self.master_strictness = max(0.0, min(100.0, float(strictness)))
 
     def _load_pose_templates(self) -> List[Dict[str, Any]]:
         templates = []
@@ -280,6 +349,7 @@ class GestureDetector:
                 average_sample = {
                     "pose": self._average_layer(valid_samples, "pose"),
                     "face": self._average_layer(valid_samples, "face"),
+                    "hands": self._average_layer(valid_samples, "hands"),
                     "derived": self._average_layer(valid_samples, "derived"),
                 }
 
@@ -309,10 +379,11 @@ class GestureDetector:
                 max_sample_distance = max(sample_distances) if sample_distances else 0.0
 
                 auto_threshold = max_sample_distance * 1.4
-                final_threshold = max(manual_threshold, auto_threshold)
+                final_threshold = manual_threshold
                 template["threshold"] = final_threshold
                 template["average_sample_distance"] = average_sample_distance
                 template["max_sample_distance"] = max_sample_distance
+                template["suggested_threshold"] = auto_threshold
                 template["sample_count"] = len(valid_samples)
 
                 templates.append(template)
@@ -323,6 +394,7 @@ class GestureDetector:
                     f"layers={detection_layers}, "
                     f"avg_dist={average_sample_distance:.3f}, "
                     f"max_dist={max_sample_distance:.3f}, "
+                    f"suggested_threshold={auto_threshold:.3f}, "
                     f"threshold={final_threshold:.3f}"
                 )
 
@@ -353,13 +425,13 @@ class GestureDetector:
 
         has_layer = any(
             isinstance(sample.get(layer_name), dict)
-            for layer_name in ("pose", "face", "derived")
+            for layer_name in ("pose", "face", "hands", "derived")
         )
 
         if has_layer:
             layered = {}
 
-            for layer_name in ("pose", "face", "derived"):
+            for layer_name in ("pose", "face", "hands", "derived"):
                 layer = sample.get(layer_name)
 
                 if isinstance(layer, dict) and layer:
@@ -411,48 +483,58 @@ class GestureDetector:
 
         return average
 
-    def _get_pose_normalization_reference(
+    def _get_face_normalization_reference(
         self,
-        landmarks,
-        require_visibility: bool = True,
+        face_landmarks,
     ) -> Optional[Tuple[Tuple[float, float], float]]:
-        left_shoulder = landmarks[self.POSE_LANDMARKS["left_shoulder"]]
-        right_shoulder = landmarks[self.POSE_LANDMARKS["right_shoulder"]]
-
-        required_points = [
-            landmarks[index] for index in self.POSE_LANDMARKS.values()
-        ]
-
-        if require_visibility and not self._points_visible(required_points):
+        if face_landmarks is None:
             return None
 
-        center_x = (left_shoulder.x + right_shoulder.x) / 2
-        center_y = (left_shoulder.y + right_shoulder.y) / 2
+        face_points = [[point.x, point.y] for point in face_landmarks]
 
-        shoulder_width = self._point_distance(
-            [left_shoulder.x, left_shoulder.y],
-            [right_shoulder.x, right_shoulder.y],
+        if not face_points:
+            return None
+
+        xs = [point[0] for point in face_points]
+        ys = [point[1] for point in face_points]
+
+        center_x = (min(xs) + max(xs)) / 2
+        center_y = (min(ys) + max(ys)) / 2
+        face_width = max(xs) - min(xs)
+        face_height = max(ys) - min(ys)
+        face_scale = max(face_width, face_height)
+
+        left_mouth = face_landmarks[self.FACE_LANDMARKS["left_mouth_corner"]]
+        right_mouth = face_landmarks[self.FACE_LANDMARKS["right_mouth_corner"]]
+        mouth_width = self._point_distance(
+            [left_mouth.x, left_mouth.y],
+            [right_mouth.x, right_mouth.y],
         )
 
-        if shoulder_width <= 0:
+        face_scale = max(face_scale, mouth_width)
+
+        if face_scale <= 0:
             return None
 
-        return (center_x, center_y), shoulder_width
+        return (center_x, center_y), face_scale
 
     def _normalize_pose_with_reference(
         self,
         landmarks,
-        shoulder_center: Tuple[float, float],
-        shoulder_width: float,
-    ) -> Dict[str, List[float]]:
+        face_center: Tuple[float, float],
+        face_scale: float,
+    ) -> Optional[Dict[str, List[float]]]:
+        if landmarks is None or face_scale <= 0:
+            return None
+
         normalized = {}
 
         for landmark_name, index in self.POSE_LANDMARKS.items():
             point = landmarks[index]
 
             normalized[landmark_name] = [
-                (point.x - shoulder_center[0]) / shoulder_width,
-                (point.y - shoulder_center[1]) / shoulder_width,
+                (point.x - face_center[0]) / face_scale,
+                (point.y - face_center[1]) / face_scale,
             ]
 
         return normalized
@@ -460,10 +542,10 @@ class GestureDetector:
     def _normalize_face(
         self,
         face_landmarks,
-        shoulder_center: Tuple[float, float],
-        shoulder_width: float,
+        face_center: Tuple[float, float],
+        face_scale: float,
     ) -> Optional[Dict[str, List[float]]]:
-        if face_landmarks is None or shoulder_width <= 0:
+        if face_landmarks is None or face_scale <= 0:
             return None
 
         normalized = {}
@@ -474,9 +556,36 @@ class GestureDetector:
 
             point = face_landmarks[index]
             normalized[landmark_name] = [
-                (point.x - shoulder_center[0]) / shoulder_width,
-                (point.y - shoulder_center[1]) / shoulder_width,
+                (point.x - face_center[0]) / face_scale,
+                (point.y - face_center[1]) / face_scale,
             ]
+
+        return normalized if normalized else None
+
+    def _normalize_hands(
+        self,
+        hand_landmarks,
+        handedness,
+        face_center: Tuple[float, float],
+        face_scale: float,
+    ) -> Optional[Dict[str, List[float]]]:
+        if not hand_landmarks or face_scale <= 0:
+            return None
+
+        normalized = {}
+
+        for hand_index, landmarks in enumerate(hand_landmarks):
+            hand_label = self._hand_label(handedness, hand_index)
+
+            for landmark_name, landmark_index in self.HAND_LANDMARKS.items():
+                if landmark_index >= len(landmarks):
+                    continue
+
+                point = landmarks[landmark_index]
+                normalized[f"{hand_label}_{landmark_name}"] = [
+                    (point.x - face_center[0]) / face_scale,
+                    (point.y - face_center[1]) / face_scale,
+                ]
 
         return normalized if normalized else None
 
@@ -484,30 +593,185 @@ class GestureDetector:
         self,
         normalized_pose,
         normalized_face,
+        normalized_hands,
     ) -> Optional[Dict[str, float]]:
-        if normalized_pose is None or normalized_face is None:
+        if normalized_face is None:
             return None
 
+        features = {}
         mouth = normalized_face.get("mouth_center")
+        nose = normalized_face.get("nose")
+        upper_lip = normalized_face.get("upper_lip")
+        lower_lip = normalized_face.get("lower_lip")
+        left_mouth = normalized_face.get("left_mouth_corner")
+        right_mouth = normalized_face.get("right_mouth_corner")
+        left_eye = normalized_face.get("left_eye_outer")
+        right_eye = normalized_face.get("right_eye_outer")
+        left_eyebrow = normalized_face.get("left_eyebrow")
+        right_eyebrow = normalized_face.get("right_eyebrow")
+        chin = normalized_face.get("chin")
+
+        if upper_lip and lower_lip:
+            features["mouth_opening"] = self._point_distance(upper_lip, lower_lip)
+
+        if left_mouth and right_mouth:
+            features["mouth_width"] = self._point_distance(left_mouth, right_mouth)
+
+        if "mouth_opening" in features and features.get("mouth_width", 0) > 0:
+            features["mouth_open_ratio"] = (
+                features["mouth_opening"] / features["mouth_width"]
+            )
+
+        if left_eye and right_eye:
+            features["eye_line_tilt"] = right_eye[1] - left_eye[1]
+            features["eye_distance"] = self._point_distance(left_eye, right_eye)
+
+        if nose and chin:
+            features["nose_to_chin"] = self._point_distance(nose, chin)
+
+        if left_eyebrow and left_eye:
+            features["left_eyebrow_raise"] = left_eye[1] - left_eyebrow[1]
+
+        if right_eyebrow and right_eye:
+            features["right_eyebrow_raise"] = right_eye[1] - right_eyebrow[1]
+
+        if "left_eyebrow_raise" in features and "right_eyebrow_raise" in features:
+            features["eyebrow_raise_difference"] = (
+                features["left_eyebrow_raise"] - features["right_eyebrow_raise"]
+            )
+
+        if normalized_pose:
+            features.update(self._build_pose_derived_features(normalized_pose, mouth, nose))
+
+        if normalized_hands:
+            features.update(
+                self._build_hand_derived_features(
+                    normalized_hands,
+                    normalized_pose,
+                    mouth,
+                    nose,
+                )
+            )
+
+        return features if features else None
+
+    def _build_pose_derived_features(self, normalized_pose, mouth, nose) -> Dict[str, float]:
+        features = {}
         left_wrist = normalized_pose.get("left_wrist")
         right_wrist = normalized_pose.get("right_wrist")
+        left_elbow = normalized_pose.get("left_elbow")
+        right_elbow = normalized_pose.get("right_elbow")
+        left_shoulder = normalized_pose.get("left_shoulder")
+        right_shoulder = normalized_pose.get("right_shoulder")
 
-        if mouth is None or left_wrist is None or right_wrist is None:
-            return None
+        if mouth and left_wrist:
+            features["left_wrist_to_mouth"] = self._point_distance(left_wrist, mouth)
 
-        left_distance = self._point_distance(left_wrist, mouth)
-        right_distance = self._point_distance(right_wrist, mouth)
+        if mouth and right_wrist:
+            features["right_wrist_to_mouth"] = self._point_distance(right_wrist, mouth)
 
-        return {
-            "left_wrist_to_mouth": left_distance,
-            "right_wrist_to_mouth": right_distance,
-            "closest_wrist_to_mouth": min(left_distance, right_distance),
-        }
+        if nose and left_wrist:
+            features["left_wrist_to_nose"] = self._point_distance(left_wrist, nose)
+
+        if nose and right_wrist:
+            features["right_wrist_to_nose"] = self._point_distance(right_wrist, nose)
+
+        wrist_mouth_distances = [
+            features[key]
+            for key in ("left_wrist_to_mouth", "right_wrist_to_mouth")
+            if key in features
+        ]
+        if wrist_mouth_distances:
+            features["closest_wrist_to_mouth"] = min(wrist_mouth_distances)
+
+        if left_shoulder and right_shoulder:
+            features["shoulder_width"] = self._point_distance(left_shoulder, right_shoulder)
+
+        if left_elbow and left_wrist:
+            features["left_forearm_length"] = self._point_distance(left_elbow, left_wrist)
+
+        if right_elbow and right_wrist:
+            features["right_forearm_length"] = self._point_distance(right_elbow, right_wrist)
+
+        if left_shoulder and left_elbow:
+            features["left_upper_arm_length"] = self._point_distance(left_shoulder, left_elbow)
+
+        if right_shoulder and right_elbow:
+            features["right_upper_arm_length"] = self._point_distance(right_shoulder, right_elbow)
+
+        return features
+
+    def _build_hand_derived_features(
+        self,
+        normalized_hands,
+        normalized_pose,
+        mouth,
+        nose,
+    ) -> Dict[str, float]:
+        features = {}
+
+        for hand_label in self._detected_hand_labels(normalized_hands):
+            wrist = normalized_hands.get(f"{hand_label}_wrist")
+            thumb_tip = normalized_hands.get(f"{hand_label}_thumb_tip")
+            index_tip = normalized_hands.get(f"{hand_label}_index_tip")
+            middle_tip = normalized_hands.get(f"{hand_label}_middle_tip")
+            ring_tip = normalized_hands.get(f"{hand_label}_ring_tip")
+            pinky_tip = normalized_hands.get(f"{hand_label}_pinky_tip")
+
+            fingertips = [
+                point
+                for point in (thumb_tip, index_tip, middle_tip, ring_tip, pinky_tip)
+                if point is not None
+            ]
+
+            if wrist and mouth:
+                features[f"{hand_label}_hand_to_mouth"] = self._point_distance(wrist, mouth)
+
+            if wrist and nose:
+                features[f"{hand_label}_hand_to_nose"] = self._point_distance(wrist, nose)
+
+            if wrist and index_tip:
+                features[f"{hand_label}_index_tip_to_wrist"] = self._point_distance(
+                    index_tip,
+                    wrist,
+                )
+
+            if wrist and fingertips:
+                distances = [
+                    self._point_distance(fingertip, wrist)
+                    for fingertip in fingertips
+                ]
+                features[f"{hand_label}_finger_to_wrist_average"] = (
+                    sum(distances) / len(distances)
+                )
+
+            if thumb_tip and index_tip:
+                features[f"{hand_label}_thumb_tip_to_index_tip"] = self._point_distance(
+                    thumb_tip,
+                    index_tip,
+                )
+
+            if index_tip and pinky_tip:
+                features[f"{hand_label}_hand_span"] = self._point_distance(
+                    index_tip,
+                    pinky_tip,
+                )
+
+            if normalized_pose and wrist:
+                for side in ("left", "right"):
+                    shoulder = normalized_pose.get(f"{side}_shoulder")
+                    if shoulder:
+                        features[f"{hand_label}_hand_to_{side}_shoulder"] = (
+                            self._point_distance(wrist, shoulder)
+                        )
+
+        return features
 
     @staticmethod
     def _build_sample_data(
         normalized_pose,
         normalized_face,
+        normalized_hands,
         derived_features,
     ) -> Optional[Dict[str, Any]]:
         sample_data = {}
@@ -517,6 +781,9 @@ class GestureDetector:
 
         if normalized_face:
             sample_data["face"] = normalized_face
+
+        if normalized_hands:
+            sample_data["hands"] = normalized_hands
 
         if derived_features:
             sample_data["derived"] = derived_features
@@ -537,6 +804,7 @@ class GestureDetector:
         best_match = None
         best_distance = float("inf")
         best_threshold = 0.0
+        best_raw_threshold = 0.0
 
         for template in self.pose_templates:
             distance = self._sample_distance(current_sample, template)
@@ -544,21 +812,34 @@ class GestureDetector:
             if distance is None:
                 continue
 
+            threshold = self._effective_template_threshold(template)
+
             if distance < best_distance:
                 best_distance = distance
                 best_match = template["gesture"]
-                best_threshold = template["threshold"]
+                best_threshold = threshold
+                best_raw_threshold = template["threshold"]
 
         self._debug_print(
             f"[MATCH DEBUG] best_match={best_match}, "
             f"best_distance={best_distance:.3f}, "
-            f"threshold={best_threshold:.3f}"
+            f"threshold={best_threshold:.3f}, "
+            f"profile_threshold={best_raw_threshold:.3f}, "
+            f"master_strictness={self.master_strictness:.0f}"
         )
 
         if best_match is not None and best_distance <= best_threshold:
             return best_match, best_distance, best_threshold
 
         return None
+
+    def _effective_template_threshold(self, template) -> float:
+        threshold = float(template["threshold"])
+        return threshold * self._master_strictness_threshold_multiplier()
+
+    def _master_strictness_threshold_multiplier(self) -> float:
+        # 0 is forgiving, 50 keeps profile thresholds unchanged, 100 is strict.
+        return 1.75 - ((self.master_strictness / 100.0) * 1.5)
 
     def _sample_distance(self, current_sample, template) -> Optional[float]:
         detection_layers = template.get("detection_layers", ["pose"])
@@ -670,9 +951,69 @@ class GestureDetector:
             1: "nose",
             13: "mouth_center",
             14: "lower_lip",
+            33: "left_eye_outer",
             61: "left_mouth_corner",
+            105: "left_eyebrow",
+            152: "chin",
+            263: "right_eye_outer",
             291: "right_mouth_corner",
+            334: "right_eyebrow",
         }
+
+    @staticmethod
+    def _hand_landmark_names() -> Dict[int, str]:
+        return {
+            0: "wrist",
+            4: "thumb_tip",
+            5: "index_mcp",
+            8: "index_tip",
+            9: "middle_mcp",
+            12: "middle_tip",
+            13: "ring_mcp",
+            16: "ring_tip",
+            17: "pinky_mcp",
+            20: "pinky_tip",
+        }
+
+    def _hands_to_dict(self, hand_landmarks, handedness) -> Dict[str, Any]:
+        hands = {}
+
+        for hand_index, landmarks in enumerate(hand_landmarks):
+            hand_label = self._hand_label(handedness, hand_index)
+            hands[hand_label] = self._landmarks_to_dict(
+                landmarks,
+                self._hand_landmark_names(),
+            )
+
+        return hands
+
+    @staticmethod
+    def _hand_label(handedness, hand_index: int) -> str:
+        if hand_index < len(handedness) and handedness[hand_index]:
+            category = handedness[hand_index][0]
+            category_name = getattr(category, "category_name", None)
+
+            if category_name:
+                return category_name.lower()
+
+        return f"hand_{hand_index}"
+
+    @staticmethod
+    def _detected_hand_labels(normalized_hands) -> List[str]:
+        labels = set()
+
+        for key in normalized_hands.keys():
+            parts = key.split("_")
+
+            if len(parts) < 2:
+                continue
+
+            if parts[0] == "hand" and len(parts) >= 3:
+                labels.add("_".join(parts[:2]))
+            else:
+                labels.add(parts[0])
+
+        return sorted(labels)
 
     def _landmarks_to_dict(self, landmarks, names) -> Dict[str, Dict[str, float]]:
         landmark_dict = {}
@@ -706,3 +1047,6 @@ class GestureDetector:
 
         if self.face_detector is not None:
             self.face_detector.close()
+
+        if self.hand_detector is not None:
+            self.hand_detector.close()
