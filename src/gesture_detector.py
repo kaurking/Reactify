@@ -94,6 +94,12 @@ class GestureDetector:
         "hands": 0.25,
         "derived": 0.30,
     }
+    MIN_LAYER_KEY_COVERAGE = {
+        "pose": 0.80,
+        "face": 0.80,
+        "hands": 0.80,
+        "derived": 0.60,
+    }
 
     def __init__(
         self,
@@ -852,10 +858,22 @@ class GestureDetector:
         for layer_name in detection_layers:
             current_layer = current_sample.get(layer_name)
             template_layer = template["average_sample"].get(layer_name)
-            distance = self._layer_distance(current_layer, template_layer)
+
+            if not template_layer:
+                continue
+
+            distance = self._layer_distance(
+                current_layer,
+                template_layer,
+                self.MIN_LAYER_KEY_COVERAGE.get(layer_name, 0.80),
+            )
 
             if distance is None:
-                continue
+                self._debug_print(
+                    f"[MATCH DEBUG] skipping {template.get('gesture')}: "
+                    f"missing or incomplete required layer '{layer_name}'"
+                )
+                return None
 
             weight = float(layer_weights.get(layer_name, 1.0))
 
@@ -867,14 +885,23 @@ class GestureDetector:
 
         return weighted_total / weight_total
 
-    def _layer_distance(self, current_layer, template_layer) -> Optional[float]:
+    def _layer_distance(
+        self,
+        current_layer,
+        template_layer,
+        min_key_coverage: float,
+    ) -> Optional[float]:
         if not current_layer or not template_layer:
             return None
 
         total = 0.0
         count = 0
+        comparable_count = 0
 
         for key, template_value in template_layer.items():
+            if self._is_point(template_value) or isinstance(template_value, (int, float)):
+                comparable_count += 1
+
             if key not in current_layer:
                 continue
 
@@ -894,6 +921,12 @@ class GestureDetector:
             count += 1
 
         if count == 0:
+            return None
+
+        if comparable_count == 0:
+            return None
+
+        if count / comparable_count < min_key_coverage:
             return None
 
         return total / count

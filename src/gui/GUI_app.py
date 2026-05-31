@@ -496,7 +496,6 @@ class ReactifyGUI:
     def _create_trigger_engine(self):
         return TriggerEngine(
             effects=self.library.effects,
-            min_confidence=0.15,
             required_hold_seconds=self._get_required_hold_seconds(),
         )
 
@@ -541,6 +540,13 @@ class ReactifyGUI:
 
             if not self.cap.isOpened():
                 raise RuntimeError("Could not open webcam.")
+
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+
+            actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            self._log(f"Camera capture size: {actual_width}x{actual_height}")
 
             self.running = True
 

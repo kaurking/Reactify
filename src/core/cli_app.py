@@ -16,7 +16,6 @@ class MemeCamApp:
 
         self.trigger_engine = TriggerEngine(
             effects=self.library.effects,
-            min_confidence=0.15,
         )
 
         self.audio_player = AudioPlayer()

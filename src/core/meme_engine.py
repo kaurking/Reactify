@@ -117,11 +117,9 @@ class TriggerEngine:
     def __init__(
         self,
         effects: Dict[str, MemeEffect],
-        min_confidence: float = 0.15,
         required_hold_seconds: float = 0.45,
     ):
         self.effects = effects
-        self.min_confidence = min_confidence
         self.required_hold_seconds = required_hold_seconds
 
         self.last_trigger_times: Dict[str, float] = {}
@@ -133,7 +131,7 @@ class TriggerEngine:
     def get_triggered_effect(self, detection: DetectionResult) -> Optional[MemeEffect]:
         now = time.time()
 
-        if detection.gesture is None or detection.confidence < self.min_confidence:
+        if detection.gesture is None:
             self._reset_candidate()
             return None
 
