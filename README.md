@@ -6,7 +6,7 @@ Nessecary applications and plugins (Windows):
     - install Audio monitor plugin
 2. Install VB audio virtual cable.
 
-Nessecary applications and plugins (MAC silicon and intel):
+Nessecary applications and plugins (MAC silicon):
 1. Install OBS Studio
 3. Install blackhole2ch
 
@@ -17,7 +17,7 @@ Noise suppression: Off <br>
 Echo cancellation: Off <br>
 Automatic input sensitivity: Off 
 
-### Setup guide (Windows) NB For first version, will be updated
+### Setup guide (Windows)
 1. In github under Releases install the compressed file for Windows and unzip it. It should contain the app, assets, models, internal folders and .env file. NB run Reactify.exe only at the end of the guide.
 2. Install OBS studio. Install Spout plugin and Audio monitor plugin. Install VB virtual cable and restart your PC.
 3. in OBS settings set Audio monitoring device to VB cable Input.
@@ -32,7 +32,7 @@ your headphones.
 11. In discord when inside a call apply the discord settings and set audio input as VB Output and camera to OBS virtual camera.
 12. Run OBS and Discord with the necessary settings and only then run Reactify.app
 
-### Setup guide (MAC silicon and intel)
+### Setup guide (MAC silicon)
 1. In github under Releases install the compressed file for MacOS and unzip it. It should contain the app, assets, models folders and .env file. NB run Reactify.app only at the end of the guide.
 2. Install OBS studio. Install blackhole and restart your PC.
 3. In OBS settings set Audio monitoring device to "blackhole".
