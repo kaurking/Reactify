@@ -9,9 +9,10 @@ import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+from core.paths import app_base_dir
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = app_base_dir()
 POSE_MODEL_PATH = BASE_DIR / "models" / "pose_landmarker_lite.task"
 FACE_MODEL_PATH = BASE_DIR / "models" / "face_landmarker.task"
 HAND_MODEL_PATH = BASE_DIR / "models" / "hand_landmarker.task"
