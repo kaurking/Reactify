@@ -26,7 +26,7 @@ Automatic input sensitivity: Off
 6. open OBS. Create a new scene called "Reactify".
 7. Add a media Source to Reactify scene and call it exactly "ReactifySound". Add a Spout source. Keep settings default.
 8. Under audio mixer set "Mic/Aux" and "ReactifySound" to monitor and output (under gear icon).
-9. (not mandatory) If you want to hear the soundeffects youself you have to add a Audio monitor filter to the added effects. Add device as
+9. (not mandatory) If you want to hear the soundeffects youself you have to add a Audio monitor filter to ReactifySound. Add device as
 your headphones. 
 10. Start virtual camera in OBS.
 11. In discord when inside a call apply the discord settings and set audio input as VB Output and camera to OBS virtual camera.
