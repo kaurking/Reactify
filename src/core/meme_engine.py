@@ -9,11 +9,13 @@ import pygame
 
 from core.profile_store import list_profiles
 from gesture_detector import DetectionResult
+from core.paths import app_base_dir
 
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+BASE_DIR = app_base_dir()
 IMAGE_DIR = BASE_DIR / "assets" / "images"
 SOUND_DIR = BASE_DIR / "assets" / "sounds"
+print(BASE_DIR)
 
 
 @dataclass

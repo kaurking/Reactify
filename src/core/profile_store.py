@@ -3,9 +3,10 @@ import re
 import shutil
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from core.paths import app_base_dir
 
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+BASE_DIR = app_base_dir()
 POSE_DIR = BASE_DIR / "assets" / "poses"
 IMAGE_DIR = BASE_DIR / "assets" / "images"
 SOUND_DIR = BASE_DIR / "assets" / "sounds"

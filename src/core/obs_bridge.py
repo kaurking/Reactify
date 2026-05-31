@@ -6,13 +6,14 @@ import threading
 import time
 
 from dotenv import load_dotenv
+from core.paths import app_base_dir
 
 try:
     import obsws_python as obs
 except ImportError:
     obs = None
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+BASE_DIR = app_base_dir()
 load_dotenv(BASE_DIR / ".env")
 
 
