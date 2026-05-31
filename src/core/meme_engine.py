@@ -116,7 +116,7 @@ class TriggerEngine:
         self,
         effects: Dict[str, MemeEffect],
         min_confidence: float = 0.15,
-        required_hold_seconds: float = 0.05,
+        required_hold_seconds: float = 0.45,
     ):
         self.effects = effects
         self.min_confidence = min_confidence
