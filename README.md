@@ -18,11 +18,11 @@ Echo cancellation: Off <br>
 Automatic input sensitivity: Off 
 
 ### Setup guide (Windows) NB For first version, will be updated
-1. In github under Releases install the compressed file for Windows. NB run Reactify.exe only at the end of the guide.
+1. In github under Releases install the compressed file for Windows and unzip it. It should contain the app, assets, models, internal folders and .env file. NB run Reactify.exe only at the end of the guide.
 2. Install OBS studio. Install Spout plugin and Audio monitor plugin. Install VB virtual cable and restart your PC.
 3. in OBS settings set Audio monitoring device to VB cable Input.
 4. Enable OBS WebSocket server. Go Tools -> WebSocket Server setting -> enable. keep port default.
-5. Copy `.env.example` to `.env` and set `OBS_PASSWORD` to the OBS WebSocket server password from Tools -> WebSocket Server Settings.
+5. Inside the `.env` set `OBS_PASSWORD` to the OBS WebSocket server password (make sure the format stays the same) from Tools -> WebSocket Server Settings.
 6. open OBS. Create a new scene called "Reactify".
 7. Add a media Source to Reactify scene and call it exactly "ReactifySound". Add a Spout source. Keep settings default.
 8. Under audio mixer set "Mic/Aux" and "ReactifySound" to monitor and output (under gear icon).
@@ -30,14 +30,14 @@ Automatic input sensitivity: Off
 your headphones. 
 10. Start virtual camera in OBS.
 11. In discord when inside a call apply the discord settings and set audio input as VB Output and camera to OBS virtual camera.
-12. Run OBS and Discord with the necessary settings and only then run Reactify.exe
+12. Run OBS and Discord with the necessary settings and only then run Reactify.app
 
 ### Setup guide (MAC silicon and intel)
-1. In github under Releases install the compressed file for MacOS. NB run Reactify.exe only at the end of the guide.
+1. In github under Releases install the compressed file for MacOS and unzip it. It should contain the app, assets, models folders and .env file. NB run Reactify.app only at the end of the guide.
 2. Install OBS studio. Install blackhole and restart your PC.
 3. In OBS settings set Audio monitoring device to "blackhole".
 4. Enable OBS WebSocket server. Go Tools -> WebSocket Server setting -> enable. keep port default.
-5. Copy `.env.example` to `.env` and set `OBS_PASSWORD` to the OBS WebSocket server password from Tools -> WebSocket Server Settings.
+5. Inside the `.env` set `OBS_PASSWORD` to the OBS WebSocket server password (make sure the format stays the same) from Tools -> WebSocket Server Settings.
 6. Open OBS. On the left create a scene called "Reactify".
 7. To the Reactify scene add a image source called exactly "ReactifyOverlay" and Media source called exactly "ReactifySound". Leave both with default settings.
 8. Under audio mixer set "Mic/Aux" and "ReactifySound" to monitor and output (under gear icon).
