@@ -1,12 +1,19 @@
 from dataclasses import dataclass
+import os
+from pathlib import Path
 from typing import Optional
 import threading
 import time
+
+from dotenv import load_dotenv
 
 try:
     import obsws_python as obs
 except ImportError:
     obs = None
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(BASE_DIR / ".env")
 
 
 @dataclass
@@ -23,15 +30,28 @@ class ObsEffect:
 class OBSBridge:
     def __init__(
         self,
-        host: str = "localhost",
-        port: int = 4455,
-        password: str = "",
+        host: str | None = None,
+        port: int | None = None,
+        password: str | None = None,
     ):
-        self.host = host
-        self.port = port
-        self.password = password
+        self.host = host or os.getenv("OBS_HOST", "localhost")
+        self.port = port if port is not None else self._get_obs_port()
+        self.password = password if password is not None else os.getenv("OBS_PASSWORD")
+
+        if not self.password:
+            raise RuntimeError("OBS_PASSWORD is missing. Add it to your .env file.")
+
         self.client = None
         self.connected = False
+
+    @staticmethod
+    def _get_obs_port() -> int:
+        port_value = os.getenv("OBS_PORT", "4455")
+
+        try:
+            return int(port_value)
+        except ValueError as error:
+            raise RuntimeError("OBS_PORT must be a valid integer.") from error
 
     def connect(self) -> bool:
         if obs is None:

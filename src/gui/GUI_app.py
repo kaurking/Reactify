@@ -19,6 +19,12 @@ from core.profile_store import (
 
 
 class ReactifyGUI:
+    DEFAULT_REQUIRED_HOLD_SECONDS = 0.05
+    DEFAULT_MASTER_STRICTNESS = 50.0
+    DEFAULT_PROFILE_STRICTNESS = 70.0
+    PROFILE_THRESHOLD_MIN = 0.03
+    PROFILE_THRESHOLD_MAX = 0.80
+
     def __init__(self, root):
         self.root = root
         self.root.title("Reactify")
@@ -32,14 +38,20 @@ class ReactifyGUI:
         self.library = MemeLibrary()
         self.library.load_defaults()
 
-        self.trigger_engine = TriggerEngine(
-            effects=self.library.effects,
-            min_confidence=0.15,
+        self.required_hold_seconds_var = tk.StringVar(
+            value=str(self.DEFAULT_REQUIRED_HOLD_SECONDS)
         )
+        self.master_strictness_var = tk.DoubleVar(value=self.DEFAULT_MASTER_STRICTNESS)
+        self.master_strictness_label_var = tk.StringVar()
+        self.profile_strictness_var = tk.DoubleVar(value=self.DEFAULT_PROFILE_STRICTNESS)
+        self.profile_strictness_label_var = tk.StringVar()
+        self._update_master_strictness_label()
+        self._update_profile_strictness_label()
+        self.trigger_engine = self._create_trigger_engine()
 
         self.audio_player = AudioPlayer()
         self.visual_renderer = VisualRenderer()
-        self.obs_bridge = OBSBridge(password="")
+        self.obs_bridge = OBSBridge()
         self.obs_bridge.connect()
 
         if platform.system() == "Windows":
@@ -55,6 +67,8 @@ class ReactifyGUI:
 
         self.last_log_time = 0.0
         self.log_interval = 0.5
+
+        self.show_debug_keypoints_var = tk.BooleanVar(value=False)
 
         self.loaded_profiles = []
 
@@ -144,6 +158,46 @@ class ReactifyGUI:
         )
         self.stop_button.pack(fill=tk.X, pady=3)
 
+        ttk.Label(box, text="Hold time before trigger (seconds):").pack(
+            anchor=tk.W,
+            pady=(10, 0),
+        )
+
+        self.required_hold_entry = ttk.Entry(
+            box,
+            textvariable=self.required_hold_seconds_var,
+            width=10,
+        )
+        self.required_hold_entry.pack(anchor=tk.W, pady=(0, 6))
+
+        ttk.Label(box, textvariable=self.master_strictness_label_var).pack(
+            anchor=tk.W,
+            pady=(8, 0),
+        )
+
+        tk.Scale(
+            box,
+            from_=0,
+            to=100,
+            orient=tk.HORIZONTAL,
+            variable=self.master_strictness_var,
+            command=self.on_master_strictness_changed,
+            showvalue=False,
+            length=240,
+        ).pack(fill=tk.X)
+
+        ttk.Button(
+            box,
+            text="Apply Trigger Settings",
+            command=self.apply_trigger_settings,
+        ).pack(fill=tk.X, pady=3)
+
+        ttk.Checkbutton(
+            box,
+            text="Show debug keypoints",
+            variable=self.show_debug_keypoints_var,
+        ).pack(anchor=tk.W, pady=(10, 0))
+
     def _build_status(self, parent):
         box = ttk.LabelFrame(parent, text="Detection Status", padding=10)
         box.pack(fill=tk.X, pady=(0, 10))
@@ -160,7 +214,7 @@ class ReactifyGUI:
         self._status_row(box, "Confidence:", self.confidence_var)
         self._status_row(box, "Landmarks:", self.landmarks_var)
         self._status_row(box, "Effect:", self.effect_var)
-        self._status_row(box, "Hold:", self.hold_progress_var)
+        self._status_row(box, "Hold progress:", self.hold_progress_var)
 
     def _build_effects(self, parent):
         box = ttk.LabelFrame(parent, text="Loaded Effects", padding=10)
@@ -223,20 +277,51 @@ class ReactifyGUI:
 
         self.profile_display_name_var = tk.StringVar(value="Absolute Cinema")
         self.profile_gesture_var = tk.StringVar(value="absolute_cinema")
-        self.profile_threshold_var = tk.StringVar(value="0.55")
+        self.profile_threshold_var = tk.StringVar(
+            value=str(self._profile_strictness_to_threshold(self.DEFAULT_PROFILE_STRICTNESS))
+        )
         self.profile_cooldown_var = tk.StringVar(value="3.0")
         self.profile_sound_volume_var = tk.StringVar(value="1.0")
         self.profile_overlay_duration_var = tk.StringVar(value="1.8")
         self.profile_image_var = tk.StringVar(value="assets/images/Absolute_Cinema.png")
         self.profile_sound_var = tk.StringVar(value="assets/sounds/vine-boom.mp3")
         self.profile_samples_var = tk.StringVar(value="Samples recorded: 0")
+        self.profile_face_only_var = tk.BooleanVar(value=False)
 
         self._form_row(form, "Display name:", self.profile_display_name_var)
         self._form_row(form, "Gesture ID:", self.profile_gesture_var)
-        self._form_row(form, "Threshold:", self.profile_threshold_var)
-        self._form_row(form, "Cooldown:", self.profile_cooldown_var)
+        self._form_row(form, "Cooldown after trigger (seconds):", self.profile_cooldown_var)
         self._form_row(form, "Sound volume:", self.profile_sound_volume_var)
-        self._form_row(form, "Overlay duration:", self.profile_overlay_duration_var)
+        self._form_row(form, "Overlay duration (seconds):", self.profile_overlay_duration_var)
+
+        strictness_box = ttk.LabelFrame(
+            right,
+            text="Detection Strictness",
+            padding=10,
+        )
+        strictness_box.pack(fill=tk.X, pady=(12, 0))
+
+        ttk.Label(
+            strictness_box,
+            textvariable=self.profile_strictness_label_var,
+        ).pack(anchor=tk.W)
+
+        tk.Scale(
+            strictness_box,
+            from_=0,
+            to=100,
+            orient=tk.HORIZONTAL,
+            variable=self.profile_strictness_var,
+            command=self.on_profile_strictness_changed,
+            showvalue=False,
+            length=420,
+        ).pack(fill=tk.X)
+
+        ttk.Checkbutton(
+            strictness_box,
+            text="Face-only expression: ignore hands, arms, and shoulders",
+            variable=self.profile_face_only_var,
+        ).pack(anchor=tk.W, pady=(8, 0))
 
         image_row = ttk.Frame(form)
         image_row.pack(fill=tk.X, pady=3)
@@ -326,7 +411,8 @@ class ReactifyGUI:
         help_text = (
             "Start the camera first, then click the sample button and hold the pose. "
             "The app takes 5 samples, one every 2 seconds. "
-            "Use threshold to control strictness: lower = stricter, higher = easier to trigger."
+            "Use strictness to control matching: higher means fewer accidental triggers, "
+            "lower means the pose is easier to trigger."
         )
 
         ttk.Label(
@@ -341,19 +427,94 @@ class ReactifyGUI:
         row = ttk.Frame(parent)
         row.pack(fill=tk.X, pady=2)
 
-        ttk.Label(row, text=label_text, width=12).pack(side=tk.LEFT)
+        ttk.Label(row, text=label_text, width=14).pack(side=tk.LEFT)
         ttk.Label(row, textvariable=variable).pack(side=tk.LEFT)
 
     def _form_row(self, parent, label, variable):
         row = ttk.Frame(parent)
         row.pack(fill=tk.X, pady=3)
 
-        ttk.Label(row, text=label, width=18).pack(side=tk.LEFT)
+        ttk.Label(row, text=label, width=32).pack(side=tk.LEFT)
 
         entry = ttk.Entry(row, textvariable=variable)
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         return entry
+
+    def _get_required_hold_seconds(self):
+        try:
+            hold_seconds = float(self.required_hold_seconds_var.get())
+        except ValueError as error:
+            raise ValueError("Hold time before trigger must be a number.") from error
+
+        if hold_seconds < 0:
+            raise ValueError("Hold time before trigger cannot be negative.")
+
+        return hold_seconds
+
+    def on_master_strictness_changed(self, _value=None):
+        self._update_master_strictness_label()
+        self._apply_master_strictness_to_detector()
+
+    def on_profile_strictness_changed(self, _value=None):
+        strictness = float(self.profile_strictness_var.get())
+        threshold = self._profile_strictness_to_threshold(strictness)
+        self.profile_threshold_var.set(f"{threshold:.3f}")
+        self._update_profile_strictness_label()
+
+    def _update_master_strictness_label(self):
+        strictness = float(self.master_strictness_var.get())
+        self.master_strictness_label_var.set(
+            f"Master detection strictness: {strictness:.0f}%"
+        )
+
+    def _update_profile_strictness_label(self):
+        strictness = float(self.profile_strictness_var.get())
+        self.profile_strictness_label_var.set(
+            "Pose detection strictness: "
+            f"{strictness:.0f}% "
+            "(higher = stricter, lower = easier)"
+        )
+
+    def _apply_master_strictness_to_detector(self):
+        if self.detector is not None:
+            self.detector.set_master_strictness(self.master_strictness_var.get())
+
+    def _profile_strictness_to_threshold(self, strictness: float) -> float:
+        strictness = max(0.0, min(100.0, float(strictness)))
+        threshold_range = self.PROFILE_THRESHOLD_MAX - self.PROFILE_THRESHOLD_MIN
+        return self.PROFILE_THRESHOLD_MAX - ((strictness / 100.0) * threshold_range)
+
+    def _threshold_to_profile_strictness(self, threshold: float) -> float:
+        threshold = max(
+            self.PROFILE_THRESHOLD_MIN,
+            min(self.PROFILE_THRESHOLD_MAX, float(threshold)),
+        )
+        threshold_range = self.PROFILE_THRESHOLD_MAX - self.PROFILE_THRESHOLD_MIN
+        return ((self.PROFILE_THRESHOLD_MAX - threshold) / threshold_range) * 100.0
+
+    def _create_trigger_engine(self):
+        return TriggerEngine(
+            effects=self.library.effects,
+            min_confidence=0.15,
+            required_hold_seconds=self._get_required_hold_seconds(),
+        )
+
+    def apply_trigger_settings(self):
+        try:
+            self.trigger_engine = self._create_trigger_engine()
+        except ValueError as error:
+            messagebox.showerror("Invalid trigger setting", str(error))
+            return
+
+        self.hold_progress_var.set("0%")
+        self.effect_var.set("None")
+        self._apply_master_strictness_to_detector()
+        self._log(
+            "Applied trigger settings: "
+            f"hold time before trigger = {self.trigger_engine.required_hold_seconds}s, "
+            f"master strictness = {self.master_strictness_var.get():.0f}%"
+        )
 
     def start_camera(self):
         if self.running:
@@ -369,8 +530,11 @@ class ReactifyGUI:
             return False
 
         try:
+            self.trigger_engine = self._create_trigger_engine()
+
             self._log("Starting detector...")
             self.detector = GestureDetector(debug=True)
+            self._apply_master_strictness_to_detector()
 
             self._log("Opening camera...")
             self.cap = cv2.VideoCapture(camera_index)
@@ -513,6 +677,9 @@ class ReactifyGUI:
         if self.sampling_active:
             frame = self._draw_sampling_countdown(frame, now)
 
+        if self.show_debug_keypoints_var.get():
+            frame = self._draw_debug_keypoints(frame, detection)
+
         preview_frame = self._resize_for_preview(
             frame,
             max_width=740,
@@ -522,6 +689,110 @@ class ReactifyGUI:
         self._show_frame(preview_frame)
 
         self.root.after(15, self.update_frame)
+
+    def _draw_debug_keypoints(self, frame, detection):
+        if detection.landmarks is None:
+            return frame
+
+        self._draw_pose_debug(frame, detection.landmarks.get("pose", {}))
+        self._draw_face_debug(frame, detection.landmarks.get("face", {}))
+        self._draw_hands_debug(frame, detection.landmarks.get("hands", {}))
+
+        return frame
+
+    def _draw_pose_debug(self, frame, pose_landmarks):
+        if not pose_landmarks:
+            return
+
+        color = (0, 210, 255)
+        connections = [
+            ("left_shoulder", "right_shoulder"),
+            ("left_shoulder", "left_elbow"),
+            ("left_elbow", "left_wrist"),
+            ("right_shoulder", "right_elbow"),
+            ("right_elbow", "right_wrist"),
+        ]
+
+        self._draw_landmark_connections(frame, pose_landmarks, connections, color)
+        self._draw_landmark_points(frame, pose_landmarks, color)
+
+    def _draw_face_debug(self, frame, face_landmarks):
+        if not face_landmarks:
+            return
+
+        color = (80, 255, 120)
+        connections = [
+            ("left_eye_outer", "right_eye_outer"),
+            ("left_mouth_corner", "mouth_center"),
+            ("mouth_center", "right_mouth_corner"),
+            ("upper_lip", "lower_lip"),
+            ("nose", "mouth_center"),
+            ("nose", "chin"),
+        ]
+
+        self._draw_landmark_connections(frame, face_landmarks, connections, color)
+        self._draw_landmark_points(frame, face_landmarks, color)
+
+    def _draw_hands_debug(self, frame, hands):
+        if not hands:
+            return
+
+        colors = {
+            "left": (255, 120, 80),
+            "right": (180, 120, 255),
+        }
+
+        connections = [
+            ("wrist", "thumb_tip"),
+            ("wrist", "index_mcp"),
+            ("index_mcp", "index_tip"),
+            ("wrist", "middle_mcp"),
+            ("middle_mcp", "middle_tip"),
+            ("wrist", "ring_mcp"),
+            ("ring_mcp", "ring_tip"),
+            ("wrist", "pinky_mcp"),
+            ("pinky_mcp", "pinky_tip"),
+            ("thumb_tip", "index_tip"),
+            ("index_tip", "pinky_tip"),
+        ]
+
+        for hand_label, hand_landmarks in hands.items():
+            color = colors.get(hand_label, (255, 255, 80))
+            self._draw_landmark_connections(frame, hand_landmarks, connections, color)
+            self._draw_landmark_points(frame, hand_landmarks, color)
+
+    def _draw_landmark_connections(self, frame, landmarks, connections, color):
+        for start_name, end_name in connections:
+            start = self._landmark_pixel(frame, landmarks.get(start_name))
+            end = self._landmark_pixel(frame, landmarks.get(end_name))
+
+            if start is None or end is None:
+                continue
+
+            cv2.line(frame, start, end, color, 2, cv2.LINE_AA)
+
+    def _draw_landmark_points(self, frame, landmarks, color):
+        for point in landmarks.values():
+            pixel = self._landmark_pixel(frame, point)
+
+            if pixel is None:
+                continue
+
+            cv2.circle(frame, pixel, 4, color, -1, cv2.LINE_AA)
+
+    @staticmethod
+    def _landmark_pixel(frame, point):
+        if not isinstance(point, dict):
+            return None
+
+        height, width = frame.shape[:2]
+        x = point.get("x")
+        y = point.get("y")
+
+        if x is None or y is None:
+            return None
+
+        return int(float(x) * width), int(float(y) * height)
 
     def _draw_sampling_countdown(self, frame, now):
         seconds_left = max(0.0, self.next_sample_time - now)
@@ -614,7 +885,11 @@ class ReactifyGUI:
         self.profile_display_name_var.set(profile.get("display_name", ""))
         self.profile_gesture_var.set(profile.get("gesture", ""))
         self.profile_sound_volume_var.set(str(profile.get("sound_volume", 1.0)))
-        self.profile_threshold_var.set(str(profile.get("threshold", 0.55)))
+        self.profile_face_only_var.set(bool(profile.get("face_only", False)))
+        threshold = float(profile.get("threshold", 0.55))
+        self.profile_threshold_var.set(str(threshold))
+        self.profile_strictness_var.set(self._threshold_to_profile_strictness(threshold))
+        self._update_profile_strictness_label()
         self.profile_cooldown_var.set(str(profile.get("cooldown", 3.0)))
         self.profile_overlay_duration_var.set(str(profile.get("overlay_duration", 1.8)))
         self.profile_image_var.set(profile.get("image", ""))
@@ -626,7 +901,9 @@ class ReactifyGUI:
     def new_profile(self):
         self.profile_display_name_var.set("")
         self.profile_gesture_var.set("")
-        self.profile_threshold_var.set("0.25")
+        self.profile_strictness_var.set(self.DEFAULT_PROFILE_STRICTNESS)
+        self.on_profile_strictness_changed()
+        self.profile_face_only_var.set(False)
         self.profile_cooldown_var.set("2.0")
         self.profile_sound_volume_var.set("1.0")
         self.profile_overlay_duration_var.set("1.8")
@@ -790,16 +1067,16 @@ class ReactifyGUI:
         if detection.sample_data is None:
             if detection.landmarks is None:
                 status = (
-                    "No body pose detected. Retrying in 2 seconds. "
-                    "Step back so your upper body is visible."
+                    "No face detected. Retrying in 2 seconds. "
+                    "Keep your face clearly visible in the camera."
                 )
-                self._log("Sampling skipped: no pose landmarks detected.")
+                self._log("Sampling skipped: no face landmarks detected.")
             else:
                 status = (
-                    "Pose detected, but it could not be normalized. Retrying in 2 seconds. "
-                    "Keep both shoulders visible."
+                    "Face detected, but it could not be normalized. Retrying in 2 seconds. "
+                    "Keep your face centered and well lit."
                 )
-                self._log("Sampling skipped: pose could not be normalized.")
+                self._log("Sampling skipped: face could not be normalized.")
 
             self.profile_sampling_status_var.set(status)
             self.next_sample_time = now + self.sample_interval
@@ -846,6 +1123,7 @@ class ReactifyGUI:
             return
 
         try:
+            self.on_profile_strictness_changed()
             threshold = float(self.profile_threshold_var.get())
             cooldown = float(self.profile_cooldown_var.get())
             overlay_duration = float(self.profile_overlay_duration_var.get())
@@ -857,15 +1135,14 @@ class ReactifyGUI:
             )
             return
 
+        detection_layers, layer_weights = self._profile_detection_config()
+
         profile = {
             "gesture": gesture,
             "display_name": self.profile_display_name_var.get().strip() or gesture,
-            "detection_layers": ["pose", "face", "derived"],
-            "layer_weights": {
-                "pose": 0.25,
-                "face": 0.25,
-                "derived": 0.50,
-            },
+            "face_only": self.profile_face_only_var.get(),
+            "detection_layers": detection_layers,
+            "layer_weights": layer_weights,
             "image": self.profile_image_var.get().strip(),
             "sound": self.profile_sound_var.get().strip(),
             "sound_volume": sound_volume,
@@ -882,13 +1159,28 @@ class ReactifyGUI:
         self.reload_profiles_runtime()
         self.refresh_profiles()
 
+    def _profile_detection_config(self):
+        if self.profile_face_only_var.get():
+            return ["face", "derived"], {
+                "face": 0.65,
+                "derived": 0.35,
+            }
+
+        return ["pose", "face", "hands", "derived"], {
+            "pose": 0.20,
+            "face": 0.25,
+            "hands": 0.25,
+            "derived": 0.30,
+        }
+
     def reload_profiles_runtime(self):
         self.library.reload()
 
-        self.trigger_engine = TriggerEngine(
-            effects=self.library.effects,
-            min_confidence=0.15,
-        )
+        try:
+            self.trigger_engine = self._create_trigger_engine()
+        except ValueError as error:
+            messagebox.showerror("Invalid trigger setting", str(error))
+            return
 
         if self.detector is not None:
             self.detector.reload_templates()
